@@ -171,7 +171,7 @@ class ActiveDirectoryServiceUserKeytabUtil
         }
         catch (KerberosProtocolException)
         {
-            await Console.Error.WriteLineAsync("SPN not found in KDC");
+            await Console.Error.WriteLineAsync($"Error: SPN '{Spn}' not found in KDC");
             return 1;
         }
         var kvno = ticket.Ticket.EncryptedPart.KeyVersionNumber.GetValueOrDefault(0);
