@@ -7,6 +7,10 @@
         <Nullable>enable</Nullable>
         <RootNamespace>ActiveDirectoryServiceUserKeytabUtil</RootNamespace>
         <PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
+        <PackAsTool>true</PackAsTool>
+        <ToolCommandName>ActiveDirectoryServiceUserKeytabUtil</ToolCommandName>
+        <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
+        <Version>1.0.0</Version>
     </PropertyGroup>
 
     <ItemGroup>
