@@ -22,6 +22,7 @@ using Kerberos.NET.Client;
 using Kerberos.NET.Credentials;
 using Kerberos.NET.Crypto;
 using Kerberos.NET.Entities;
+using Kerberos.NET.Transport;
 using McMaster.Extensions.CommandLineUtils;
 
 namespace ActiveDirectoryServiceUserKeytabUtil;
@@ -78,14 +79,47 @@ class ActiveDirectoryServiceUserKeytabUtil
 
         var client = new KerberosClient();
 
-        KerberosPasswordCredential krbUser;
+        try
+        {
+            var krbUser = new KerberosPasswordCredential(user, password, domain);
+            await client.Authenticate(krbUser);
 
+            // kerberos.net also allows lowerCase domains, we override the domain name with the correct casing 
+            // otherwise the salt generation will fail
+            domain = client.DefaultDomain;
+        }
+        catch (AggregateException e)
+        {
+            var transportException = e.InnerExceptions
+                .FirstOrDefault(innerException => innerException is KerberosTransportException, null);
+            if (transportException == null) throw;
+
+            await Console.Error.WriteLineAsync($"TransportError: Please check if '{domain}'" +
+                                               $" is a krb5 domain and not a netbios name." +
+                                               $" Error text: {transportException.Message}");
+            return 1;
+        }
+        catch (KerberosProtocolException e)
+        {
+            if (e.Error.ErrorCode == KerberosErrorCode.KDC_ERR_ETYPE_NOSUPP)
+            {
+                await Console.Error.WriteLineAsync($"User doesn't support secure encryption types." +
+                                                   $" Maybe {user} only supports RC4!" +
+                                                   $" If this is the case you can change your password and try again.");
+                return 1;
+            }
+
+            await Console.Error.WriteLineAsync("Login failed: " + e.Message);
+            return 1;
+        }
+
+        // Login was sucessful: domain, user and password are now checked. We will now extract the salt from the user
         try
         {
             // We use a fake password, no normal user would be able to enter 0x01 as an password,
             // Kerberos.NET reports in this case the ETYPE-INFO2 information
-            krbUser = new KerberosPasswordCredential(user, "\x01", domain);
-            await client.Authenticate(krbUser);
+            var dummyKrbCredentials = new KerberosPasswordCredential(user, "\x01", domain);
+            await client.Authenticate(dummyKrbCredentials);
         }
         catch (KerberosProtocolException e)
         {
@@ -130,25 +164,6 @@ class ActiveDirectoryServiceUserKeytabUtil
 
         Console.WriteLine("Salt: "+salt);
 
-        krbUser = new KerberosPasswordCredential(user, password, domain);
-        try
-        {
-            await client.Authenticate(krbUser);
-        }
-        catch (KerberosProtocolException e)
-        {
-            if (e.Error.ErrorCode == KerberosErrorCode.KDC_ERR_ETYPE_NOSUPP)
-            {
-                await Console.Error.WriteLineAsync($"User doesn't support secure encryption types." +
-                                                   $" Maybe {user} only supports RC4!" +
-                                                   $" If this is the case you can change your password and try again.");
-                return 1;
-            }
-
-            await Console.Error.WriteLineAsync("Login failed: " + e.Message);
-            return 1;
-        }
-
         KrbApReq ticket;
         try
         {
@@ -172,7 +187,7 @@ class ActiveDirectoryServiceUserKeytabUtil
         {
             ticket.Ticket.EncryptedPart.Decrypt(serviceKey, KeyUsage.Ticket, KrbEncTicketPart.DecodeApplication);
         }
-        catch (SecurityException e)
+        catch (SecurityException)
         {
             await Console.Error.WriteLineAsync($"user {user} is not the owner of spn: {Spn}");
             return 1;
