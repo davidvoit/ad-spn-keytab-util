@@ -9,6 +9,7 @@
         <PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
         <PackAsTool>true</PackAsTool>
         <ToolCommandName>ad-spn-keytab-util</ToolCommandName>
+        <AssemblyName>ad-spn-keytab-util</AssemblyName>
         <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
         <Version>0.0.1</Version>
     </PropertyGroup>
