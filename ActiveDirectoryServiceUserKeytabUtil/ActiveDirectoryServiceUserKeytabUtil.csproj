@@ -8,7 +8,7 @@
         <RootNamespace>ActiveDirectoryServiceUserKeytabUtil</RootNamespace>
         <PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
         <PackAsTool>true</PackAsTool>
-        <ToolCommandName>ActiveDirectoryServiceUserKeytabUtil</ToolCommandName>
+        <ToolCommandName>ad-spn-keytab-util</ToolCommandName>
         <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
         <Version>0.0.1</Version>
     </PropertyGroup>
