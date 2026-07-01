@@ -15,6 +15,7 @@
     </PropertyGroup>
 
     <ItemGroup>
+      <PackageReference Include="DnsClient" Version="1.8.0" />
       <PackageReference Include="Kerberos.NET" Version="4.6.146" />
       <PackageReference Include="McMaster.Extensions.CommandLineUtils" Version="5.1.0" />
     </ItemGroup>

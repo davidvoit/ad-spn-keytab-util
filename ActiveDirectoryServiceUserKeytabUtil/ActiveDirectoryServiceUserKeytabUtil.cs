@@ -17,6 +17,7 @@
 
 using System.ComponentModel.DataAnnotations;
 using System.Security;
+using DnsClient;
 using Kerberos.NET;
 using Kerberos.NET.Client;
 using Kerberos.NET.Credentials;
@@ -78,26 +79,51 @@ class ActiveDirectoryServiceUserKeytabUtil
         string? salt = null;
 
         var client = new KerberosClient();
+        var krbUser = new KerberosPasswordCredential(user, password, domain);
 
         try
         {
-            var krbUser = new KerberosPasswordCredential(user, password, domain);
             await client.Authenticate(krbUser);
 
             // kerberos.net also allows lowerCase domains, we override the domain name with the correct casing 
             // otherwise the salt generation will fail
             domain = client.DefaultDomain;
         }
-        catch (AggregateException e)
+        catch (AggregateException e) when (e.InnerExceptions.Any(ex => ex is KerberosTransportException))
         {
-            var transportException = e.InnerExceptions
-                .FirstOrDefault(innerException => innerException is KerberosTransportException, null);
-            if (transportException == null) throw;
+            // Built-in KDC discovery failed (common on Linux when DNS SRV response is truncated and
+            // Kerberos.NET's resolver doesn't support TCP fallback). Retry with manual DNS resolution.
+            client = await PinKdcViaDnsAsync(domain);
 
-            await Console.Error.WriteLineAsync($"TransportError: Please check if '{domain}'" +
-                                               $" is a krb5 domain and not a netbios name." +
-                                               $" Error text: {transportException.Message}");
-            return 1;
+            try
+            {
+                await client.Authenticate(krbUser);
+                domain = client.DefaultDomain;
+            }
+            catch (AggregateException e2)
+            {
+                var transportException = e2.InnerExceptions
+                    .FirstOrDefault(innerException => innerException is KerberosTransportException, null);
+                if (transportException == null) throw;
+
+                await Console.Error.WriteLineAsync($"TransportError: Please check if '{domain}'" +
+                                                   $" is a krb5 domain and not a netbios name." +
+                                                   $" Error text: {transportException.Message}");
+                return 1;
+            }
+            catch (KerberosProtocolException e2)
+            {
+                if (e2.Error.ErrorCode == KerberosErrorCode.KDC_ERR_ETYPE_NOSUPP)
+                {
+                    await Console.Error.WriteLineAsync($"User doesn't support secure encryption types." +
+                                                       $" Maybe {user} only supports RC4!" +
+                                                       $" If this is the case you can change your password and try again.");
+                    return 1;
+                }
+
+                await Console.Error.WriteLineAsync("Login failed: " + e2.Message);
+                return 1;
+            }
         }
         catch (KerberosProtocolException e)
         {
@@ -239,4 +265,32 @@ class ActiveDirectoryServiceUserKeytabUtil
         return 0;
     }
 
+    /// <summary>
+    /// Fallback: resolves KDC addresses via DNS SRV using DnsClient (which supports TCP fallback
+    /// for truncated responses) and pins them on the client so Kerberos.NET skips its own lookup.
+    /// </summary>
+    private static async Task<KerberosClient> PinKdcViaDnsAsync(string domain)
+    {
+        var lookup = new LookupClient(new LookupClientOptions { UseTcpFallback = true });
+        var result = await lookup.QueryAsync($"_kerberos._tcp.{domain}", QueryType.SRV);
+
+        var kdcList = result.Answers.SrvRecords()
+            .OrderBy(r => r.Priority)
+            .ThenByDescending(r => r.Weight)
+            .Select(r =>
+            {
+                var host = r.Target.Value.TrimEnd('.');
+                return r.Port != 88 ? $"{host}:{r.Port}" : host;
+            })
+            .ToList();
+
+        var client = new KerberosClient();
+
+        // PinKdc tells Kerberos.NET to use a specific KDC for this realm,
+        // bypassing its own (broken on Linux) DNS SRV discovery.
+        foreach (var kdc in kdcList)
+            client.PinKdc(domain.ToUpperInvariant(), kdc);
+
+        return client;
+    }
 }
