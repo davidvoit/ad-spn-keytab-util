@@ -271,8 +271,21 @@ class ActiveDirectoryServiceUserKeytabUtil
     /// </summary>
     private static async Task<KerberosClient> PinKdcViaDnsAsync(string domain)
     {
-        var lookup = new LookupClient(new LookupClientOptions { UseTcpFallback = true });
-        var result = await lookup.QueryAsync($"_kerberos._tcp.{domain}", QueryType.SRV);
+        var lookup = new LookupClient(new LookupClientOptions { 
+            UseTcpFallback = true,
+            Timeout = TimeSpan.FromSeconds(2),
+        });
+
+        IDnsQueryResponse result;
+        try
+        {
+            result = await lookup.QueryAsync($"_kerberos._tcp.{domain}", QueryType.SRV);
+        }
+        catch (Exception)
+        {
+            // DNS failed let the original client print out the error
+            return new KerberosClient();
+        }
 
         var kdcList = result.Answers.SrvRecords()
             .OrderBy(r => r.Priority)
@@ -283,6 +296,8 @@ class ActiveDirectoryServiceUserKeytabUtil
                 return r.Port != 88 ? $"{host}:{r.Port}" : host;
             })
             .ToList();
+
+        Console.WriteLine($"Fallback DNS lookup found {kdcList.Count} dcs for {domain}");
 
         var client = new KerberosClient();
 
