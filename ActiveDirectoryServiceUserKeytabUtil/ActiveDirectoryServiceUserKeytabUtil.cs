@@ -177,7 +177,7 @@ class ActiveDirectoryServiceUserKeytabUtil
         }
 
         // Fallback to use default salt algorithm - this normally should never happen, maybe we should bail instead?
-        if (salt != null)
+        if (salt == null)
         {
             var principal = new PrincipalName(PrincipalNameType.NT_ENTERPRISE,
                 realm: domain,
